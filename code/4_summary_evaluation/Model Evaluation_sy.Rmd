@@ -1,0 +1,303 @@
+---
+title: "Model Evaluations"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r import, message=FALSE, warning=FALSE}
+
+# library 
+library(here)
+library(tidyverse)
+library(pROC)
+library(cutpointr)
+library(gridExtra)
+library(kableExtra)
+
+#  functions
+source(here('code/library/functions.r'))
+source(here('code/4_summary_evaluation/0_functions.r'))
+
+# super learner models
+external_behavior <- readRDS('models/superlearner/ext_n2_spl4q.rds')
+internal_behavior <- readRDS('models/superlearner/int_n2_spl4q.rds')
+
+# read dataset
+df_ext <- readRDS('data/df_ext_n2_spl4q.rds')
+df_int <- readRDS('data/df_int_n2_spl4q.rds')
+
+# pre-processing
+prep_df_ext <- prepDat(df_ext$bl, demvars)
+prep_df_int <- prepDat(df_int$bl, demvars)
+
+# merge data with predicted y
+merge_df_ext <- cbind(prep_df_ext, external_behavior$library.predict)
+merge_df_int <- cbind(prep_df_int, internal_behavior$library.predict)
+
+# performance metrics except calibration
+external_behavior.perf <- prepCVSLperf(external_behavior)
+internal_behavior.perf <- prepCVSLperf(internal_behavior)
+```
+
+
+
+
+
+# External problem behavior
+## Outcome class proportion
+```{r ext table}
+# table of class proportions
+merge_df_ext %>%
+    count(class_lbl) %>%
+    mutate(n=sprintf('%i (%.1f%%)', n, n/sum(n)*100)) %>%
+kable(booktabs=TRUE, col.names=c('Class', 'n')) %>%
+    add_header_above(c('Outcome class proportions'=2)) %>%
+    kable_styling(bootstrap_options=c('hover'), full_width=FALSE)
+```
+
+## Performance Metrics
+```{r ext pf table, output=FALSE, message=FALSE}
+cutpointr_ext <- map(external_behavior.perf$preds, function(p) {
+    cutpointr(p, external_behavior$Y, metric=youden, method=maximize_metric, direction='>=', pos_clas=1, break_ties=median)
+}) %>%
+    bind_rows(.id='alg')
+
+ext_set <- cutpointr_ext %>%
+    select(alg, optimal_cutpoint, acc, sensitivity, specificity, AUC) %>%
+    left_join(external_behavior.perf$aucspr, by='alg') %>%
+    arrange(desc(aucpr)) 
+
+# rename
+ext_set$alg[which(ext_set$alg=='SL.glmnetNoStandardize_All')] <- 'Lasso'
+ext_set$alg[which(ext_set$alg=='SL.glassoGrp_All')] <- 'Group Lasso'
+ext_set$alg[which(ext_set$alg=='SL.glm_All')] <- 'Logistic Reg'
+ext_set$alg[which(ext_set$alg=='SL.mean_All')] <- 'Mean'
+ext_set$alg[which(ext_set$alg=='SL.ksvm_All')] <- 'KSVM'
+
+ext_set %>% 
+kable(booktabs=TRUE, digits=3, col.names=c('', 'Optimal cutpoint', 'Accuracy', 'Sensitivity (TPR)', 'Specificity (TNR)', 'AUC', 'AUC (Precision-recall)')) %>%
+    kable_styling(bootstrap_options=c('striped', 'hover', 'condensed'), full_width=F)
+```
+
+## Calibration
+The predicted probabilities were divided into $10$ quantiles for all classifiers. Probabilities by logistic regression were divided into $9$ intervals for `external` outcome and $3$ groups for `internal` outcome because many of them have same predicted values. The mean model was not included in calibration analysis.
+
+```{r ext pre-process, message=FALSE, warning=FALSE}
+
+# superlearner algorithms names
+SL.library_full <- external_behavior$libraryNames
+
+# rename
+SL.library = SL.library_full[-1] # drop 'SL.mean'
+SL.library_name = c('Logistic', 'Group Lasso', 'Lasso', 
+                    'RF_3mtry_100trees', 'RF_3mtry_500trees', 'RF_3mtry_700trees',
+                    'RF_5mtry_100trees', 'RF_5mtry_500trees', 'RF_5mtry_700trees',
+                    'RF_7mtry_100trees', 'RF_7mtry_500trees', 'RF_7mtry_700trees', 
+                    'KSVM'
+                    )
+
+# quantile stats
+ext_outcome <- NULL
+
+for (i in seq_along(SL.library)){
+  print(paste(i, SL.library[i]), sep=',')
+  qtl_ext <- get_calib_info(df_hat=merge_df_ext, func=SL.library[i])
+  ext_outcome <- c(ext_outcome, qtl_ext)
+}
+
+```
+
+
+```{r ext plot}
+
+for (i in seq_along(SL.library)){
+  # get true and predicted values within each interval
+  ext_aggre_true <- ext_outcome[2*i-1]$aggre_true$x
+  ext_aggre_pred <- ext_outcome[2*i]$aggre_pred$x
+  # combine true and predicted values into one matrix
+  freq_ext <- cbind(matrix(unlist(ext_aggre_true)), matrix(unlist(ext_aggre_pred)))
+  # generate x labels
+  ext_x_labels <- get_x_labels(aggre_pred=ext_aggre_pred)
+
+  bar <- barplot(t(freq_ext), beside=T,
+               ylim = c(0, 1),
+               args.legend = list(x = 'topleft', cex=1),
+               # legend.text = c('Observed', SL.library_name[i]),
+               legend.text = c('Observed', 'Predicted'),
+               names.arg = ext_x_labels,
+               ylab = 'events rate', xlab = 'quantile interval', main = paste('External (', SL.library_name[i], ")"))
+  abline(h=seq(0, 1, 0.1), lty=3, col='grey', lwd=0.6)
+}
+```
+
+## AUC-ROC
+```{r rename func}
+rename_func <- function(alg){
+  alg_new <- 
+  ifelse(alg == 'SL.glmnetNoStandardize_All', 'Lasso', 
+  ifelse(alg == 'SL.glassoGrp_All', 'Group Lasso', 
+  ifelse(alg == 'SL.randomForest_mtry3_ntree100_All', 'RF_3mtry_100trees',
+  ifelse(alg == 'SL.randomForest_mtry3_ntree500_All', 'RF_3mtry_500trees',
+  ifelse(alg == 'SL.randomForest_mtry3_ntree700_All', 'RF_3mtry_700trees',
+  ifelse(alg == 'SL.randomForest_mtry5_ntree100_All', 'RF_5mtry_100trees',
+  ifelse(alg == 'SL.randomForest_mtry5_ntree500_All', 'RF_5mtry_500trees',
+  ifelse(alg == 'SL.randomForest_mtry5_ntree700_All', 'RF_5mtry_700trees',
+  ifelse(alg == 'SL.randomForest_mtry7_ntree100_All', 'RF_7mtry_100trees',
+  ifelse(alg == 'SL.randomForest_mtry7_ntree500_All', 'RF_7mtry_500trees',
+  ifelse(alg == 'SL.randomForest_mtry7_ntree700_All', 'RF_7mtry_700trees',
+  ifelse(alg == 'SL.ksvm_All', 'KSVM',
+  ifelse(alg == 'SL.glm_All', 'Logistic', 
+  ifelse(alg == 'SL.mean_All','Mean', 
+  ifelse(alg == 'SuperLearner', 'SuperLearner', 'DiscreteSL')))))))))))))))
+}
+```
+
+
+```{r ext roc}
+external_behavior.perf$roc$alg_new = rename_func(external_behavior.perf$roc$alg)
+
+ggplot(external_behavior.perf$roc, aes(1-spec, sens, col=alg_new)) +
+    geom_line() +
+    scale_color_discrete('') +
+    labs(x='False positive rate (1 - specificity)', y='True positive rate (sensitivity/recall)', title='ROC curves')
+```
+
+
+## AUC-pr
+```{r ext auc pr, warning=FALSE}
+external_behavior.perf$prec_rec$alg_new = rename_func(external_behavior.perf$prec_rec$alg)
+
+ggplot(external_behavior.perf$prec_rec, aes(rec, prec, col=alg_new)) +
+  geom_line() +
+  scale_color_discrete('') +
+  labs(x='True positive rate (sensitivity/recall)', y='Positive predictive value (precision)', title='Precision-recall curves')
+
+```
+
+## Accuracy
+```{r ext acc}
+external_behavior.perf$acc$alg_new = rename_func(external_behavior.perf$acc$alg)
+
+ggplot(external_behavior.perf$acc, aes(cutoff, acc, col=alg_new)) +
+  geom_line() +
+  scale_color_discrete('') +
+  labs(x='Cutoff', y='Accuracy')
+```
+
+
+# Internal problem behaviors
+## Outcome class proportion
+```{r table}
+# table of class proportions
+merge_df_int %>%
+    count(class_lbl) %>%
+    mutate(n=sprintf('%i (%.1f%%)', n, n/sum(n)*100)) %>%
+kable(booktabs=TRUE, col.names=c('Class', 'n')) %>%
+    add_header_above(c('Outcome class proportions'=2)) %>%
+    kable_styling(bootstrap_options=c('hover'), full_width=FALSE)
+```
+
+## Performance Metrics
+```{r pf table}
+cutpointr_int <- map(internal_behavior.perf$preds, function(p) {
+    cutpointr(p, internal_behavior$Y, metric=youden, method=maximize_metric, direction='>=', pos_clas=1, break_ties=median)
+}) %>%
+    bind_rows(.id='alg')
+
+int_set <- cutpointr_int %>%
+    select(alg, optimal_cutpoint, acc, sensitivity, specificity, AUC) %>%
+    left_join(internal_behavior.perf$aucspr, by='alg') %>%
+    arrange(desc(aucpr)) 
+
+# rename
+int_set$alg[which(int_set$alg=='SL.glmnetNoStandardize_All')] <- 'Lasso'
+int_set$alg[which(int_set$alg=='SL.glassoGrp_All')] <- 'Group Lasso'
+int_set$alg[which(int_set$alg=='SL.glm_All')] <- 'Logistic Reg'
+int_set$alg[which(int_set$alg=='SL.mean_All')] <- 'Mean'
+int_set$alg[which(int_set$alg=='SL.ksvm_All')] <- 'KSVM'
+
+int_set %>% 
+kable(booktabs=TRUE, digits=3, col.names=c('', 'Optimal cutpoint', 'Accuracy', 'Sensitivity (TPR)', 'Specificity (TNR)', 'AUC', 'AUC (Precision-recall)')) %>%
+    kable_styling(bootstrap_options=c('striped', 'hover', 'condensed'), full_width=F)
+```
+
+## Calibration
+The predicted probabilities were divided into $10$ quantiles for all classifiers. Probabilities by logistic regression were divided into $9$ intervals for `external` outcome and $3$ groups for `internal` outcome because many of them have same predicted values. The mean model was not included in calibration analysis.
+
+```{r pre-process, message=FALSE, warning=FALSE}
+
+# # superlearner algorithms names
+# SL.library_full <- internal_behavior$libraryNames
+# 
+# # rename
+# SL.library = SL.library_full[-1]
+# SL.library_name = c('Logistic', 'Lasso', 'RF_untuned', 'RF_tuned', 'Group Lasso')
+
+# quantile stats
+int_outcome <- NULL
+
+for (i in seq_along(SL.library)){
+  print(paste(i, SL.library[i]), sep=',')
+  qtl_int <- get_calib_info(df_hat=merge_df_int, func=SL.library[i])
+  int_outcome <- c(int_outcome, qtl_int)
+}
+
+```
+
+```{r Plot}
+for (i in seq_along(SL.library)){
+  # get true and predicted values within each interval
+  int_aggre_true <- int_outcome[2*i-1]$aggre_true$x
+  int_aggre_pred <- int_outcome[2*i]$aggre_pred$x
+  # combine true and predicted values into one matrix
+  freq_int <- cbind(matrix(unlist(int_aggre_true)), matrix(unlist(int_aggre_pred)))
+  # generate x labels
+  int_x_labels <- get_x_labels(aggre_pred=int_aggre_pred)
+
+  bar <- barplot(t(freq_int), beside=T,
+               ylim = c(0, 1),
+               args.legend = list(x = 'topleft', cex=1),
+               # legend.text = c('SL.true', SL.library_name[i]),
+               legend.text = c('Observed', 'Predicted'),
+               names.arg = int_x_labels,
+               ylab = 'events rate', xlab = 'quantile interval', main = paste('Internal (', SL.library_name[i], ")"))
+  abline(h=seq(0, 1, 0.1), lty=3, col='grey', lwd=0.6)
+}
+```
+
+## ROC
+```{r roc}
+internal_behavior.perf$roc$alg_new = rename_func(internal_behavior.perf$roc$alg)
+
+ggplot(internal_behavior.perf$roc, aes(1-spec, sens, col=alg_new)) +
+    geom_line() +
+    scale_color_discrete('') +
+    labs(x='False positive rate (1 - specificity)', y='True positive rate (sensitivity/recall)', title='ROC curves')
+```
+
+## AUC-pr
+```{r auc pr, warning=FALSE}
+internal_behavior.perf$prec_rec$alg_new = rename_func(internal_behavior.perf$prec_rec$alg)
+
+ggplot(internal_behavior.perf$prec_rec, aes(rec, prec, col=alg_new)) +
+  geom_line() +
+  scale_color_discrete('') +
+  labs(x='True positive rate (sensitivity/recall)', y='Positive predictive value (precision)', title='Precision-recall curves')
+```
+
+## Accuracy
+```{r acc}
+internal_behavior.perf$acc$alg_new = rename_func(internal_behavior.perf$acc$alg)
+
+ggplot(internal_behavior.perf$acc, aes(cutoff, acc, col=alg)) +
+  geom_line() +
+  scale_color_discrete('') +
+  labs(x='Cutoff', y='Accuracy')
+```
+
+

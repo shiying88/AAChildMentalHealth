@@ -1,0 +1,292 @@
+---
+title: "RF Feature Importance"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Random Forest Feature Importance
+
+```{r, warning=FALSE, message=FALSE}
+library(here)
+library(DT)
+library(tidyverse)
+library(randomForest)
+```
+
+```{r read_data}
+# external
+rf_ext_n2_spl4q_mtry3_ntree100 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry3_ntree100.rds'))
+rf_ext_n2_spl4q_mtry3_ntree500 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry3_ntree500.rds'))
+rf_ext_n2_spl4q_mtry3_ntree700 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry3_ntree700.rds'))
+rf_ext_n2_spl4q_mtry5_ntree100 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry5_ntree100.rds'))
+rf_ext_n2_spl4q_mtry5_ntree500 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry5_ntree500.rds'))
+rf_ext_n2_spl4q_mtry5_ntree700 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry5_ntree700.rds'))
+rf_ext_n2_spl4q_mtry7_ntree100 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry7_ntree100.rds'))
+rf_ext_n2_spl4q_mtry7_ntree500 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry7_ntree500.rds'))
+rf_ext_n2_spl4q_mtry7_ntree700 <- readRDS(here('models/rf/rf_ext_n2_spl4q_mtry7_ntree700.rds'))
+
+# internal
+rf_int_n2_spl4q_mtry3_ntree100 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry3_ntree100.rds'))
+rf_int_n2_spl4q_mtry3_ntree500 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry3_ntree500.rds'))
+rf_int_n2_spl4q_mtry3_ntree700 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry3_ntree700.rds'))
+rf_int_n2_spl4q_mtry5_ntree100 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry5_ntree100.rds'))
+rf_int_n2_spl4q_mtry5_ntree500 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry5_ntree500.rds'))
+rf_int_n2_spl4q_mtry5_ntree700 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry5_ntree700.rds'))
+rf_int_n2_spl4q_mtry7_ntree100 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry7_ntree100.rds'))
+rf_int_n2_spl4q_mtry7_ntree500 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry7_ntree500.rds'))
+rf_int_n2_spl4q_mtry7_ntree700 <- readRDS(here('models/rf/rf_int_n2_spl4q_mtry7_ntree700.rds'))
+
+
+```
+
+Feature importance for standardized continuous variables are reported as standardized continuous variables were used as covariates in predictive models. 
+
+```{r}
+# convert labels
+update_row_names <- function(old_name){
+  ifelse(old_name=='Age..scaled.', 'Age', 
+  ifelse(old_name=='Female', 'Female',
+  ifelse(old_name=='BMI..scaled.', 'BMI', 
+  ifelse(old_name=='Disability', 'Disability', 
+  ifelse(old_name=='X1st.yr.in.kindergarten', 'Whether first year in kindergarten', 
+  ifelse(old_name=='Reading.score..scaled.', 'Read score', 
+  ifelse(old_name=='Math.score..scaled.', 'Math score', 
+  ifelse(old_name=='Science.score..scaled.', 'Science score', 
+  ifelse(old_name=='Lang.at.home', 'Language at home', 
+  ifelse(old_name=='Parent.edu', 'Parent education', 
+  ifelse(old_name=='HH.income', 'Household income', 
+  ifelse(old_name=='SES', 'SES', 
+  ifelse(old_name=='Food.security', 'Food security', 
+  ifelse(old_name=='HH.members', 'Household member', 
+  ifelse(old_name=='Siblings', 'Siblings', 
+  ifelse(old_name=='Childcare', 'Childcare', 
+  ifelse(old_name=='Home.parent.child.int...scaled.', 'Parent-child interaction', 
+  ifelse(old_name=='Reading.together..scaled.', 'Reading together', 
+  ifelse(old_name=='School.home.connection..scaled.', 'School-home connection', 
+  ifelse(old_name=='Community.violence..scaled.', 'Community violence', 
+  ifelse(old_name=='Cultural.heritage..scaled.', 'Cultural heritage', 
+  ifelse(old_name=='Approach.learning...parent..scaled.', 'Approach learning (by parent)', 
+  ifelse(old_name=='Approach.learning...teacher..scaled.', 'Approach learning (by teacher)', 
+  ifelse(old_name=='Attentional.focus..scaled.', 'Attentional focus', 
+  ifelse(old_name=='Social.interaction..scaled.', 'Social interaction',
+  ifelse(old_name=='Interpersonal..scaled.', 'Interpersonal', 
+  ifelse(old_name=='Self.control...parent..scaled.', 'Self-control (by parent)', 
+  ifelse(old_name=='Self.control...teacher..scaled.', 'Self-control (by teacher)', 
+  ifelse(old_name=='Inhibitory.control..scaled.', 'Inhibitory control', 
+  ifelse(old_name=='Community.support..scaled.', 'Community support', 
+  ifelse(old_name=='Parent1.Age..scaled.', 'Parent age', 'Child health'
+  )))))))))))))))))))))))))))))))
+}
+
+update_row_names_list <- function(row_name_list){
+  new_names = c()
+  for (name in row_name_list){
+    new_names = c(new_names, update_row_names(name))
+  }
+  return(new_names)
+}
+
+```
+
+```{r func_imp_table}
+importance_table <- function(rf_n2_spl4q){
+    rf_n2_spl4q.imp <- setNames(as_tibble(importance(rf_n2_spl4q, scale=FALSE), rownames='x'), c('x', 'low', 'high', 'acc', 'gini')) %>%
+        mutate(gini=scales::rescale(gini, to=c(0,100)))
+    
+    rf_n2_spl4q.imp$x = update_row_names(rf_n2_spl4q.imp$x)
+    
+    row.names(rf_n2_spl4q$importance) = update_row_names_list(rownames(rf_n2_spl4q$importance))
+    
+    importance(rf_n2_spl4q, scale=FALSE) %>%
+        as.data.frame(rownames=TRUE) %>%
+        mutate(across(c(MeanDecreaseAccuracy, MeanDecreaseGini), ~scales::rescale(., to=c(0,100)))) %>%
+    DT::datatable(filter='none') %>%
+        formatRound(c('Low (2)', 'High (1)', 'MeanDecreaseAccuracy', 'MeanDecreaseGini'), digits=3)
+}
+```
+
+```{r func_imp_plot_acc}
+importance_plot_acc <- function(rf_n2_spl4q){
+    rf_n2_spl4q.imp <- setNames(as_tibble(importance(rf_n2_spl4q, scale=FALSE), rownames='x'), c('x', 'low', 'high', 'acc', 'gini')) %>%
+        mutate(gini=scales::rescale(gini, to=c(0,100)))
+    
+    rf_n2_spl4q.imp$x = update_row_names(rf_n2_spl4q.imp$x)
+    
+    row.names(rf_n2_spl4q$importance) = update_row_names_list(rownames(rf_n2_spl4q$importance))
+    
+    ps_ext <- rf_n2_spl4q.imp %>%
+        pivot_longer(cols=c(acc), names_to='type', values_to='y') %>%
+        group_by(type) %>%
+        group_map(function(df, key) {
+            ggplot(df, aes(reorder(x, y), y)) +
+                # geom_point(size=2, pch=21) +
+                geom_col() +
+                # scale_y_continuous(breaks=function(x) seq(0, ceiling(max(x)/5)*5, 5)) +
+                coord_flip() +
+                labs(x='', y=paste('Mean decrease in', ifelse(key$type=='acc', 'accuracy', 'gini')))
+        })
+    ps_ext[[1]]
+}
+```
+
+```{r func_plot_gini}
+importance_plot_gini <- function(rf_n2_spl4q){
+    rf_n2_spl4q.imp <- setNames(as_tibble(importance(rf_n2_spl4q, scale=FALSE), rownames='x'), c('x', 'low', 'high', 'acc', 'gini')) %>%
+        mutate(gini=scales::rescale(gini, to=c(0,100)))
+    
+    rf_n2_spl4q.imp$x = update_row_names(rf_n2_spl4q.imp$x)
+    
+    row.names(rf_n2_spl4q$importance) = update_row_names_list(rownames(rf_n2_spl4q$importance))
+    
+    ps_ext <- rf_n2_spl4q.imp %>%
+        pivot_longer(cols=c(gini), names_to='type', values_to='y') %>%
+        group_by(type) %>%
+        group_map(function(df, key) {
+            ggplot(df, aes(reorder(x, y), y)) +
+                # geom_point(size=2, pch=21) +
+                geom_col() +
+                # scale_y_continuous(breaks=function(x) seq(0, ceiling(max(x)/5)*5, 5)) +
+                coord_flip() +
+                labs(x='', y=paste('Mean decrease in', ifelse(key$type=='acc', 'accuracy', 'gini')))
+        })
+    ps_ext[[1]]
+}
+```
+
+
+# External
+### mtry=3, ntree=100
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry3_ntree100)
+importance_plot_acc(rf_ext_n2_spl4q_mtry3_ntree100)
+importance_plot_gini(rf_ext_n2_spl4q_mtry3_ntree100)
+```
+
+### mtry=3, ntree=500
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry3_ntree500)
+importance_plot_acc(rf_ext_n2_spl4q_mtry3_ntree500)
+importance_plot_gini(rf_ext_n2_spl4q_mtry3_ntree500)
+```
+
+### mtry=3, ntree=700
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry3_ntree700)
+importance_plot_acc(rf_ext_n2_spl4q_mtry3_ntree700)
+importance_plot_gini(rf_ext_n2_spl4q_mtry3_ntree700)
+```
+
+### mtry=5, ntree=100
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry5_ntree100)
+importance_plot_acc(rf_ext_n2_spl4q_mtry5_ntree100)
+importance_plot_gini(rf_ext_n2_spl4q_mtry5_ntree100)
+```
+
+### mtry=5, ntree=500
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry5_ntree500)
+importance_plot_acc(rf_ext_n2_spl4q_mtry5_ntree500)
+importance_plot_gini(rf_ext_n2_spl4q_mtry5_ntree500)
+```
+
+### mtry=5, ntree=700
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry5_ntree700)
+importance_plot_acc(rf_ext_n2_spl4q_mtry5_ntree700)
+importance_plot_gini(rf_ext_n2_spl4q_mtry5_ntree700)
+```
+
+### mtry=7, ntree=100
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry7_ntree100)
+importance_plot_acc(rf_ext_n2_spl4q_mtry7_ntree100)
+importance_plot_gini(rf_ext_n2_spl4q_mtry7_ntree100)
+```
+
+### mtry=7, ntree=500
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry7_ntree500)
+importance_plot_acc(rf_ext_n2_spl4q_mtry7_ntree500)
+importance_plot_gini(rf_ext_n2_spl4q_mtry7_ntree500)
+```
+
+### mtry=7, ntree=700
+```{r}
+importance_table(rf_ext_n2_spl4q_mtry7_ntree700)
+importance_plot_acc(rf_ext_n2_spl4q_mtry7_ntree700)
+importance_plot_gini(rf_ext_n2_spl4q_mtry7_ntree700)
+```
+
+# Internal
+### mtry=3, ntree=100
+```{r}
+importance_table(rf_int_n2_spl4q_mtry3_ntree100)
+importance_plot_acc(rf_int_n2_spl4q_mtry3_ntree100)
+importance_plot_gini(rf_int_n2_spl4q_mtry3_ntree100)
+```
+
+### mtry=3, ntree=500
+```{r}
+importance_table(rf_int_n2_spl4q_mtry3_ntree500)
+importance_plot_acc(rf_int_n2_spl4q_mtry3_ntree500)
+importance_plot_gini(rf_int_n2_spl4q_mtry3_ntree500)
+```
+
+### mtry=3, ntree=700
+```{r}
+importance_table(rf_int_n2_spl4q_mtry3_ntree700)
+importance_plot_acc(rf_int_n2_spl4q_mtry3_ntree700)
+importance_plot_gini(rf_int_n2_spl4q_mtry3_ntree700)
+```
+
+### mtry=5, ntree=100
+```{r}
+importance_table(rf_int_n2_spl4q_mtry5_ntree100)
+importance_plot_acc(rf_int_n2_spl4q_mtry5_ntree100)
+importance_plot_gini(rf_int_n2_spl4q_mtry5_ntree100)
+```
+
+### mtry=5, ntree=500
+```{r}
+importance_table(rf_int_n2_spl4q_mtry5_ntree500)
+importance_plot_acc(rf_int_n2_spl4q_mtry5_ntree500)
+importance_plot_gini(rf_int_n2_spl4q_mtry5_ntree500)
+```
+
+### mtry=5, ntree=700
+```{r}
+importance_table(rf_int_n2_spl4q_mtry5_ntree700)
+importance_plot_acc(rf_int_n2_spl4q_mtry5_ntree700)
+importance_plot_gini(rf_int_n2_spl4q_mtry5_ntree700)
+```
+
+### mtry=7, ntree=100
+```{r}
+importance_table(rf_int_n2_spl4q_mtry7_ntree100)
+importance_plot_acc(rf_int_n2_spl4q_mtry7_ntree100)
+importance_plot_gini(rf_int_n2_spl4q_mtry7_ntree100)
+```
+
+### mtry=7, ntree=500
+```{r}
+importance_table(rf_int_n2_spl4q_mtry7_ntree500)
+importance_plot_acc(rf_int_n2_spl4q_mtry7_ntree500)
+importance_plot_gini(rf_int_n2_spl4q_mtry7_ntree500)
+```
+
+### mtry=7, ntree=700
+```{r}
+importance_table(rf_int_n2_spl4q_mtry7_ntree700)
+importance_plot_acc(rf_int_n2_spl4q_mtry7_ntree700)
+importance_plot_gini(rf_int_n2_spl4q_mtry7_ntree700)
+```
+
+
+
+
+
+

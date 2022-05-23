@@ -1,0 +1,252 @@
+---
+title: "AA summary table"
+author: 
+date: 
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, message=FALSE}
+# Load library and dataset needed
+
+library(kableExtra)
+library(tidyverse)
+library(here)
+
+source(here('code/library/functions.r'))
+```
+
+Variables with missingness higher than 30% were excluded for model fitting.
+```{r read_data}
+dem <- readRDS(here('data/eclsk2011_dem.rds'))
+bl <- readRDS('data/bl.rds')
+# mdata <- readRDS('data/lcmm_mdata.rds')
+mdata_imp <- readRDS('data/lcmm_mdata_imp.rds')
+
+# Filter wide data to students in modeling datasets
+# mdata_bl <- bl %>%
+#   filter(childid %in% unique(mdata$childid)) # dim: 1250   64
+mdata_bl <- bl %>%
+  filter(childid %in% unique(mdata_imp$childid)) # dim: 1279   64 imputation: have one or more for spring use imputation
+
+# External group
+ext_n2_spl4q <- readRDS(here('data/df_ext_n2_spl4q.rds')) # dim of bl: 1279   68
+binom_ext_n2_spl4q <- readRDS(here('models/univariate/binom_ext_n2_spl4q.rds'))
+
+# Internal group
+int_n2_spl4q <- readRDS(here('data/df_int_n2_spl4q.rds')) # dim of bl: 1279   68
+binom_int_n2_spl4q <- readRDS(here('models/univariate/binom_int_n2_spl4q.rds'))
+```
+
+
+# Comparing baseline characteristics
+
+## Full sample of Asian American children
+Summary statistics for the full sample size of interest.
+For all continuous variable, the summary statistics were based on original unstandardized values. 
+
+```{r}
+xvars <- demvars
+xvars[which(xvars=='age_months_sc')] <- 'age_months'
+xvars[which(xvars=='p1_pinv11_sc')] <- 'p1_pinv11' # home-child interaction
+xvars[which(xvars=='p1_read4_sc')] <- 'p1_read4'  # reading together
+xvars[which(xvars=='p2_hscon5_sc')] <- 'p2_hscon5'  # home-school connection
+xvars[which(xvars=='com_violence_sc')] <- 'com_violence' # community violence
+xvars[which(xvars=='p2_cul2_sc')] <- 'p2_cul2' # cultural heritage
+xvars[which(xvars=='x1prnapp_sc')] <- 'x1prnapp' # approach to learn - parent 
+xvars[which(xvars=='x1tchapp_sc')] <- 'x1tchapp' # approach to learn - teacher
+xvars[which(xvars=='x1attnfs_sc')] <- 'x1attnfs' # attentional focus
+xvars[which(xvars=='x1prnsoc_sc')] <- 'x1prnsoc' # social interaction - parent
+xvars[which(xvars=='x1tchper_sc')] <- 'x1tchper' # interpersonal - teacher
+xvars[which(xvars=='x1prncon_sc')] <- 'x1prncon' # self control - parent 
+xvars[which(xvars=='x1tchcon_sc')] <- 'x1tchcon' # self control - teacher
+xvars[which(xvars=='x1inbcnt_sc')] <- 'x1inbcnt' # inhibitory control - teacher
+xvars[which(xvars=='s4spprt_sc')] <- 's4spprt' # community support 
+xvars[which(xvars=='par1age_sc')] <- 'par1age' # parent1 age 
+xvars[which(xvars=='p1hscale_sc')] <- 'p1hscale' # health scale
+```
+
+```{r}
+map(xvars, function(x) {
+  if (is.numeric(mdata_bl[[x]])) {
+    summarise(mdata_bl, across(all_of(x), ~sprintf('%.2f (%.2f)', mean(., na.rm=T), sd(., na.rm=T)))) %>%
+      mutate(x=x) %>%
+      rename_with(~paste('val'), .cols=-x)
+  } else if (is.factor(mdata_bl[[x]])) {
+    count(mdata_bl, !!rlang::sym(x)) %>%
+      mutate(across(n, ~sprintf('%i (%.1f%%)', ., . / sum(.) * 100))) %>%
+      mutate(across(-n, ~paste(!!x, ., sep=': '))) %>%
+      rename_with(~paste('x'), .cols=-n) %>%
+      rename(val=n)
+  }
+}) %>%
+  bind_rows() %>%
+  select(x, val) %>%
+  filter(!str_detect(x, 'FALSE$')) %>%
+  kable(booktabs=TRUE, col.names=c('Characteristic', 'Statistic')) %>%
+  kable_styling(bootstrap_options=c('striped', 'hover', 'condensed'), full_width=FALSE)
+
+```
+note:
+`p1_pinv11`: home-child interaction
+
+`p1_read4`: reading together
+
+`p2_hscon5`: home-school connection
+
+`com_violence`: community violence
+
+`p2_cul2`: cultural heritage
+
+`x1prnapp`: approach to learn - parent report 
+
+`x1tchapp`: approach to learn - teacher report
+
+`x1attnfs`: attentional focus
+
+`x1prnsoc`: social interaction - parent report
+
+`x1tchper`: interpersonal - teacher report
+
+`x1prncon`: self control - parent report
+
+`x1tchcon`: self control - teacher report
+
+`x1inbcnt`: inhibitory control - teacher report
+
+`s4spprt`: community support 
+
+`par1age`: parent1 age 
+
+`p1hscale`: health scale
+
+
+
+## External group
+Descriptive summary stats for high vs. low classes
+
+```{r}
+map(xvars, function(x) {
+  if (is.numeric(mdata_bl[[x]])) {
+    group_by(ext_n2_spl4q$bl, class_lbl) %>%
+      summarise(across(all_of(x), ~sprintf('%.2f (%.2f)', mean(., na.rm=T), sd(., na.rm=T)))) %>%
+      mutate(x=x) %>%
+      rename_with(~paste('val'), .cols=c(-x, -class_lbl))
+  } else if (is.factor(mdata_bl[[x]])) {
+    group_by(ext_n2_spl4q$bl, class_lbl) %>%
+      count(!!rlang::sym(x)) %>%
+      mutate(across(n, ~sprintf('%i (%.1f%%)', ., . / sum(.) * 100))) %>%
+      mutate(across(-n, ~paste(!!x, ., sep=': '))) %>%
+      rename_with(~paste('x'), .cols=c(-n, -class_lbl)) %>%
+      rename(val=n)
+  }
+}) %>%
+  bind_rows() %>%
+  select(class_lbl, x, val) %>%
+  pivot_wider(names_from=class_lbl, values_from=val) %>%
+  filter(!str_detect(x, 'FALSE$')) %>%
+  kable(booktabs=TRUE) %>%
+  add_header_above(c('', 'Class'=2)) %>%
+  kable_styling(bootstrap_options=c('striped', 'hover', 'condensed'), full_width=FALSE)
+
+```
+
+
+Unadjusted logistic regression model. Each characteristic is used as a covariate. The outcome is external class labels from the clustering analysis. 'Low' class is set as the reference group.
+
+All continuous covariates are standardized to $E[X]=0$ and $Var(X)=1$.
+
+```{r}
+map(setNames(binom_ext_n2_spl4q, demnames), formatEsts, returnKbl=FALSE) %>%
+  bind_rows(.id='covariate') %>%
+  {
+    idx_hline <- mutate(., i=row_number()) %>%
+      group_by(covariate) %>%
+      filter(row_number()==n()) %>%
+      ungroup() %>%
+      pull(i)
+
+    mutate(.,
+           or=sprintf('%.2f', or),
+           ci=sprintf('[%.2f, %.2f]', cil, ciu),
+           pval=case_when(pval < 0.05 ~ sprintf('%.3f*', pval), TRUE ~ sprintf('%.2f', pval))
+    ) %>%
+      select(covariate, x, or, ci, pval) %>%
+      kable(booktabs=TRUE, col.names=c('Covariate', 'x', 'OR', '95% CI', 'p-value')) %>%
+      row_spec(idx_hline, hline_after=TRUE) %>%
+      column_spec(2, border_right=TRUE) %>%
+      collapse_rows(1, valign='middle') %>%
+      kable_styling(bootstrap_options=c('hover', 'condensed'), full_width=FALSE)
+  }
+```
+
+
+## Internal group
+Descriptive summary stats for high vs. low classes
+
+```{r}
+map(xvars, function(x) {
+  if (is.numeric(mdata_bl[[x]])) {
+    group_by(int_n2_spl4q$bl, class_lbl) %>%
+      summarise(across(all_of(x), ~sprintf('%.2f (%.2f)', mean(., na.rm=T), sd(., na.rm=T)))) %>%
+      mutate(x=x) %>%
+      rename_with(~paste('val'), .cols=c(-x, -class_lbl))
+  } else if (is.factor(mdata_bl[[x]])) {
+    group_by(int_n2_spl4q$bl, class_lbl) %>%
+      count(!!rlang::sym(x)) %>%
+      mutate(across(n, ~sprintf('%i (%.1f%%)', ., . / sum(.) * 100))) %>%
+      mutate(across(-n, ~paste(!!x, ., sep=': '))) %>%
+      rename_with(~paste('x'), .cols=c(-n, -class_lbl)) %>%
+      rename(val=n)
+  }
+}) %>%
+  bind_rows() %>%
+  select(class_lbl, x, val) %>%
+  pivot_wider(names_from=class_lbl, values_from=val) %>%
+  filter(!str_detect(x, 'FALSE$')) %>%
+  kable(booktabs=TRUE) %>%
+  add_header_above(c('', 'Class'=2)) %>%
+  kable_styling(bootstrap_options=c('striped', 'hover', 'condensed'), full_width=FALSE)
+
+```
+
+
+Unadjusted logistic regression model. 'Low' class is set as the reference group.
+
+```{r}
+map(setNames(binom_int_n2_spl4q, demnames), formatEsts, returnKbl=FALSE) %>%
+  bind_rows(.id='covariate') %>%
+  {
+    idx_hline <- mutate(., i=row_number()) %>%
+      group_by(covariate) %>%
+      filter(row_number()==n()) %>%
+      ungroup() %>%
+      pull(i)
+    
+    mutate(.,
+           or=sprintf('%.2f', or),
+           ci=sprintf('[%.2f, %.2f]', cil, ciu),
+           pval=case_when(pval < 0.05 ~ sprintf('%.3f*', pval), TRUE ~ sprintf('%.2f', pval))
+    ) %>%
+      select(covariate, x, or, ci, pval) %>%
+      kable(booktabs=TRUE, col.names=c('Covariate', 'x', 'OR', '95% CI', 'p-value')) %>%
+      row_spec(idx_hline, hline_after=TRUE) %>%
+      column_spec(2, border_right=TRUE) %>%
+      collapse_rows(1, valign='middle') %>%
+      kable_styling(bootstrap_options=c('hover', 'condensed'), full_width=FALSE)
+  }
+```
+
+
+
+
+
+
+
+
+

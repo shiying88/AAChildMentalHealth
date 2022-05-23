@@ -1,0 +1,118 @@
+---
+title: "Predictor Missingness"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+
+## delete all variable with missingness higher than 30%
+
+Missingness for predictor used in our final dataset
+```{r, warning=FALSE, message=FALSE}
+library(here)
+library(tidyverse)
+library(RColorBrewer)
+library(patchwork)
+library(kableExtra)
+
+source(here('code/library/functions.r'))
+
+theme_set(theme_bw())
+```
+
+```{r reset_demvars}
+demvars <- c(
+    'Age (scaled)'='age_months_sc',
+    'Female'='female',
+    'BMI (scaled)'='bmi_sc',
+    'Disability'='disabl',
+    '1st yr in kindergarten'='first_yr_kg',
+    'Reading score (scaled)'='read_sc',
+    'Math score (scaled)'='math_sc',
+    'Science score (scaled)'='sci_sc',
+    'Lang at home'='langst2',
+    'Parent edu'='paredu2',
+    'HH income'='hhinc2',
+    'SES'='ses',
+    'Food security'='foodsec2',
+    'HH members'='hhnum',
+    'Siblings'='siblings',
+    'Childcare'='childcare2',
+    # Created scales (from Yen)
+    'School-home connection (scaled)'='p2_hscon5_sc',
+    'Community violence (scaled)'='com_violence_sc',
+    'Cultural heritage (scaled)'='p2_cul2_sc',
+    'Home parent-child int. (scaled)'='p1_pinv11_sc', # missingness > 30%
+    'Reading together (scaled)'='p1_read4_sc', # missingness > 30%
+    'Approach learning - parent (scaled)'='x1prnapp_sc', # missingness > 30%
+    'Social interaction (scaled)'='x1prnsoc_sc', # missingness > 30%
+    'Interpersonal (scaled)'='x1tchper_sc', # missingness > 30%
+    'Self-control - parent (scaled)'='x1prncon_sc', # missingness > 30%
+    'Self-control - teacher (scaled)'='x1tchcon_sc', # missingness > 30%
+    'Child health (scaled)'='p1hscale_sc', # missingness > 30%
+    'Approach learning - teacher (scaled)'='x1tchapp_sc',
+    'Attentional focus (scaled)'='x1attnfs_sc',
+    'Inhibitory control (scaled)'='x1inbcnt_sc',
+    'Community support (scaled)'='s4spprt_sc',  # newly added
+    'Parent1 Age (scaled)'='par1age_sc'  # newly added
+)
+demnames <- names(demvars)
+```
+
+```{r}
+bl_imp <- readRDS(here('data/bl.rds'))
+bl <- readRDS(here('data/bl_noimp.rds'))
+
+mdata_imp <- readRDS(here('data/lcmm_mdata_imp.rds'))
+# Filter wide data to students in modeling datasets
+
+mdata_imp_bl <- bl %>%
+    filter(childid %in% unique(mdata_imp$childid)) # dim: 1279   64, no imputation for bl
+mdata_imp_bl_imp <- bl_imp %>%
+    filter(childid %in% unique(mdata_imp$childid)) # dim: 1279   64, with imputation for bl
+```
+
+# Before mean imputation on continous covariates
+```{r}
+mdata_imp_bl %>%
+    select(all_of(demvars)) %>%
+    mutate_all(is.na) %>%
+    pivot_longer(cols=everything(), names_to='predictor', values_to='isna') %>%
+    group_by(predictor) %>%
+        summarise(
+            n_na=sum(isna),
+            pc_na=sprintf('%.1f%%', sum(isna)/n() * 100)
+        ) %>%
+    arrange(-n_na) %>%
+kable(col.names=c('Predictor', 'N missing', '% missing')) %>%
+kable_styling(latex_options=c('HOLD_position'))
+```
+
+
+# After mean imputation on continuous covariates
+```{r}
+mdata_imp_bl_imp %>%
+    select(all_of(demvars)) %>%
+    mutate_all(is.na) %>%
+    pivot_longer(cols=everything(), names_to='predictor', values_to='isna') %>%
+    group_by(predictor) %>%
+        summarise(
+            n_na=sum(isna),
+            pc_na=sprintf('%.1f%%', sum(isna)/n() * 100)
+        ) %>%
+    arrange(-n_na) %>%
+kable(col.names=c('Predictor', 'N missing', '% missing')) %>%
+kable_styling(latex_options=c('HOLD_position'))
+```
+
+
+
+
+
+
+
