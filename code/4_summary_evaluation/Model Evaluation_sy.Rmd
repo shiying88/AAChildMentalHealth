@@ -36,8 +36,8 @@ prep_df_ext <- prepDat(df_ext$bl, demvars)
 prep_df_int <- prepDat(df_int$bl, demvars)
 
 # merge data with predicted y
-merge_df_ext <- cbind(prep_df_ext, external_behavior$library.predict)
-merge_df_int <- cbind(prep_df_int, internal_behavior$library.predict)
+merge_df_ext <- cbind(prep_df_ext, external_behavior$library.predict, external_behavior$SL.predict)
+merge_df_int <- cbind(prep_df_int, internal_behavior$library.predict, internal_behavior$SL.predict)
 
 # performance metrics except calibration
 external_behavior.perf <- prepCVSLperf(external_behavior)
@@ -94,11 +94,12 @@ SL.library_full <- external_behavior$libraryNames
 
 # rename
 SL.library = SL.library_full[-1] # drop 'SL.mean'
-SL.library_name = c('Logistic', 'Group Lasso', 'Lasso', 
-                    'RF_3mtry_100trees', 'RF_3mtry_500trees', 'RF_3mtry_700trees',
-                    'RF_5mtry_100trees', 'RF_5mtry_500trees', 'RF_5mtry_700trees',
-                    'RF_7mtry_100trees', 'RF_7mtry_500trees', 'RF_7mtry_700trees', 
-                    'KSVM'
+SL.library = append(SL.library, 'external_behavior$SL.predict')	
+SL.library_name = c('Logistic', 'Group Lasso', 'Lasso',	
+                    'RF_3mtry_100trees', 'RF_3mtry_500trees', 'RF_3mtry_700trees',	
+                    'RF_5mtry_100trees', 'RF_5mtry_500trees', 'RF_5mtry_700trees',	
+                    'RF_7mtry_100trees', 'RF_7mtry_500trees', 'RF_7mtry_700trees', 	
+                    'KSVM', 'SuperLearner'	
                     )
 
 # quantile stats
@@ -231,12 +232,12 @@ The predicted probabilities were divided into $10$ quantiles for all classifiers
 
 ```{r pre-process, message=FALSE, warning=FALSE}
 
-# # superlearner algorithms names
-# SL.library_full <- internal_behavior$libraryNames
-# 
-# # rename
-# SL.library = SL.library_full[-1]
-# SL.library_name = c('Logistic', 'Lasso', 'RF_untuned', 'RF_tuned', 'Group Lasso')
+# superlearner algorithms names
+SL.library_full <- internal_behavior$libraryNames
+ 
+# rename
+SL.library = SL.library_full[-1]
+SL.library = append(SL.library, 'internal_behavior$SL.predict')
 
 # quantile stats
 int_outcome <- NULL
